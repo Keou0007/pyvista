@@ -892,14 +892,20 @@ def test_screenshot(tmpdir):
     filename = str(tmpdir.mkdir("tmpdir").join('export-graphic.svg'))
     plotter.save_graphic(filename)
 
-    # checking if plotter closes
-    ref = proxy(plotter)
-    plotter.close()
+    # test window and array size
+    w, h = 20, 10
+    img = plotter.screenshot(transparent_background=False,
+                             window_size=(w, h))
+    assert img.shape == (h, w, 3)
+    img = plotter.screenshot(transparent_background=True,
+                             window_size=(w, h))
+    assert img.shape == (h, w, 4)
 
-    try:
-        ref
-    except:
-        raise RuntimeError('Plotter did not close')
+    # check error before first render
+    plotter = pyvista.Plotter(off_screen=False)
+    plotter.add_mesh(pyvista.Sphere())
+    with pytest.raises(RuntimeError):
+        plotter.screenshot()
 
 
 @skip_no_plotting
@@ -1567,6 +1573,28 @@ def test_user_annotations_scalar_bar_volume(uniform):
     p = pyvista.Plotter()
     p.add_volume(uniform, annotations={100.: 'yum'})
     p.show(before_close_callback=verify_cache_image)
+
+
+@skip_no_plotting
+def test_scalar_bar_args_unmodified_add_mesh(sphere):
+    sargs = {"vertical": True}
+    sargs_copy = sargs.copy()
+
+    p = pyvista.Plotter()
+    p.add_mesh(sphere, scalar_bar_args=sargs)
+
+    assert sargs == sargs_copy
+
+
+@skip_no_plotting
+def test_scalar_bar_args_unmodified_add_volume(uniform):
+    sargs = {"vertical": True}
+    sargs_copy = sargs.copy()
+
+    p = pyvista.Plotter()
+    p.add_volume(uniform, scalar_bar_args=sargs)
+
+    assert sargs == sargs_copy
 
 
 @skip_no_plotting
