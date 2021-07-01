@@ -451,13 +451,13 @@ def test_texture_airplane():
 
 def test_invalid_vector(grid):
     with pytest.raises(ValueError):
-        grid.vectors = np.empty(10)
+        grid["vectors"] = np.empty(10)
 
     with pytest.raises(ValueError):
-        grid.vectors = np.empty((3, 2))
+        grid["vectors"] = np.empty((3, 2))
 
     with pytest.raises(ValueError):
-        grid.vectors = np.empty((3, 3))
+        grid["vectors"] = np.empty((3, 3))
 
 
 def test_no_t_coords(grid):
@@ -468,7 +468,7 @@ def test_no_arrows(grid):
     assert grid.arrows is None
 
 
-def test_arrows(grid):
+def test_arrows():
     sphere = pyvista.Sphere(radius=3.14)
 
     # make cool swirly pattern
@@ -477,16 +477,16 @@ def test_arrows(grid):
                          np.cos(sphere.points[:, 2]))).T
 
     # add and scales
-    sphere.vectors = vectors*0.3
+    sphere["vectors"] = vectors*0.3
+    sphere.set_active_vectors("vectors")
     assert np.allclose(sphere.active_vectors, vectors*0.3)
-    assert np.allclose(sphere.vectors, vectors*0.3)
+    assert np.allclose(sphere["vectors"], vectors*0.3)
 
-    assert sphere.active_vectors_info[1] == '_vectors'
+    assert sphere.active_vectors_info[1] == 'vectors'
     arrows = sphere.arrows
     assert isinstance(arrows, pyvista.PolyData)
     assert np.any(arrows.points)
-    sphere.set_active_vectors('_vectors')
-    assert sphere.active_vectors_name == '_vectors'
+    assert arrows.active_vectors_name == 'vectors'
 
 
 def active_component_consistency_check(grid, component_type, field_association="point"):
@@ -1024,3 +1024,39 @@ def test_serialize_deserialize(datasets):
             arr_have = dataset_2.field_arrays[name]
             arr_expected = dataset.field_arrays[name]
             assert arr_have == pytest.approx(arr_expected)
+
+
+def test_rotations_should_match_by_a_360_degree_difference():
+    mesh = examples.load_airplane()
+
+    point = np.random.random(3) - 0.5
+    angle = (np.random.random() - 0.5) * 360.0
+    vector = np.random.random(3) - 0.5
+
+    # Rotate about x axis.
+    rot1 = mesh.copy()
+    rot2 = mesh.copy()
+    rot1.rotate_x(angle=angle, point=point)
+    rot2.rotate_x(angle=angle - 360.0, point=point)
+    assert np.allclose(rot1.points, rot2.points)
+
+    # Rotate about y axis.
+    rot1 = mesh.copy()
+    rot2 = mesh.copy()
+    rot1.rotate_y(angle=angle, point=point)
+    rot2.rotate_y(angle=angle - 360.0, point=point)
+    assert np.allclose(rot1.points, rot2.points)
+
+    # Rotate about z axis.
+    rot1 = mesh.copy()
+    rot2 = mesh.copy()
+    rot1.rotate_z(angle=angle, point=point)
+    rot2.rotate_z(angle=angle - 360.0, point=point)
+    assert np.allclose(rot1.points, rot2.points)
+
+    # Rotate about custom vector.
+    rot1 = mesh.copy()
+    rot2 = mesh.copy()
+    rot1.rotate_vector(vector=vector, angle=angle, point=point)
+    rot2.rotate_vector(vector=vector, angle=angle - 360.0, point=point)
+    assert np.allclose(rot1.points, rot2.points)

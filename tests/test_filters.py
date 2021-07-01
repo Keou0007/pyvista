@@ -481,14 +481,15 @@ def test_cell_centers_composite(composite):
 
 def test_glyph(datasets, sphere):
     for i, dataset in enumerate(datasets):
-        dataset.vectors = np.ones_like(dataset.points)
+        dataset["vectors"] = np.ones_like(dataset.points)
         result = dataset.glyph()
         assert result is not None
         assert isinstance(result, pyvista.PolyData)
     # Test different options for glyph filter
     sphere_sans_arrays = sphere.copy()
     sphere.compute_normals(inplace=True)
-    sphere.vectors = np.ones([sphere.n_points,3])
+    sphere["vectors"] = np.ones([sphere.n_points,3])
+    sphere.set_active_vectors("vectors")
     sphere.point_arrays['arr'] = np.ones(sphere.n_points)
 
     assert sphere.glyph(scale=False)
@@ -753,6 +754,23 @@ def test_streamlines_from_source(uniform_vec):
 
     source = pyvista.UniformGrid([5, 5, 5], [0.1, 0.1, 0.1], [0, 0, 0])
     stream = uniform_vec.streamlines_from_source(source, 'vectors')
+    assert all([stream.n_points, stream.n_cells])
+
+
+def test_streamlines_from_source_structured_grids():
+    x, y, z = np.meshgrid(
+        np.arange(-10, 10, 0.5), np.arange(-10, 10, 0.5), np.arange(-10, 10, 0.5)
+    )
+    mesh = pyvista.StructuredGrid(x, y, z)
+    x2, y2, z2 = np.meshgrid(
+        np.arange(-1, 1, 0.5), np.arange(-1, 1, 0.5), np.arange(-1, 1, 0.5)
+    )
+    mesh2 = pyvista.StructuredGrid(x2, y2, z2)
+    mesh["vectors"]= np.ones([mesh.n_points, 3])
+    mesh.set_active_vectors("vectors")
+
+    with pyvista.VtkErrorCatcher(raise_errors=True):
+        stream = mesh.streamlines_from_source(mesh2)
     assert all([stream.n_points, stream.n_cells])
 
 
@@ -1477,3 +1495,12 @@ def test_extrude_rotate_inplace():
     poly.extrude_rotate(resolution=resolution, inplace=True)
     assert poly.n_cells == old_line.n_points - 1
     assert poly.n_points == (resolution + 1)*old_line.n_points
+
+
+@pytest.mark.parametrize('inplace', [True, False])
+def test_subdivide_adaptive(sphere, inplace):
+    orig_n_faces = sphere.n_faces
+    sub = sphere.subdivide_adaptive(0.01, 0.001, 100000, 2, inplace=inplace)
+    assert sub.n_faces > orig_n_faces
+    if inplace:
+        assert sphere.n_faces == sub.n_faces

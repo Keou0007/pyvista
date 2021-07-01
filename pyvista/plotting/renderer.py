@@ -121,9 +121,9 @@ class Renderer(_vtk.vtkRenderer):
         self._floor_kwargs = []
         # this keeps track of lights added manually to prevent garbage collection
         self._lights = []
-        self._camera = Camera()
+        self._camera = Camera(self)
         self.SetActiveCamera(self._camera)
-
+        self._empty_str = None  # used to track reference to a vtkStringArray
         self._shadow_pass = None
 
         # This is a private variable to keep track of how many colorbars exist
@@ -177,9 +177,16 @@ class Renderer(_vtk.vtkRenderer):
             self.camera.up = camera_location[2]
 
         # reset clipping range
-        self.ResetCameraClippingRange()
+        self.reset_camera_clipping_range()
         self.camera_set = True
         self.Modified()
+
+    def reset_camera_clipping_range(self):
+        """Reset the camera clipping range based on the bounds of the visible actors.
+
+        This ensures that no props are cut off
+        """
+        self.ResetCameraClippingRange()
 
     @property
     def camera(self):
@@ -596,14 +603,8 @@ class Renderer(_vtk.vtkRenderer):
         show_zlabels : bool, optional
             Shows z labels.  Default ``True``.
 
-        italic : bool, optional
-            Italicises axis labels and numbers.  Default ``False``.
-
         bold : bool, optional
             Bolds axis labels and numbers.  Default ``True``.
-
-        shadow : bool, optional
-            Adds a black shadow to the text.  Default ``False``.
 
         font_size : float, optional
             Sets the size of the label font.  Defaults to 16.
@@ -632,9 +633,11 @@ class Renderer(_vtk.vtkRenderer):
             Title of the z axis.  Default ``"Z Axis"``.
 
         use_2d : bool, optional
-            A bug with vtk 6.3 in Windows seems to cause this function
-            to crash this can be enabled for smoother plotting for
-            other environments.
+            This can be enabled for smoother plotting.
+
+            .. warning::
+               A bug with vtk 6.3 in Windows seems to cause this
+               function to crash.
 
         grid : bool or str, optional
             Add grid lines to the backface (``True``, ``'back'``, or
@@ -647,11 +650,11 @@ class Renderer(_vtk.vtkRenderer):
             static closest to the origin (``'origin'``), or outer
             edges (``'outer'``) in relation to the camera
             position. Options include: ``'all', 'front', 'back',
-            'origin', 'outer'``
+            'origin', 'outer'``.
 
         ticks : str, optional
             Set how the ticks are drawn on the axes grid. Options include:
-            ``'inside', 'outside', 'both'``
+            ``'inside', 'outside', 'both'``.
 
         all_edges : bool, optional
             Adds an unlabeled and unticked box at the boundaries of
@@ -661,6 +664,13 @@ class Renderer(_vtk.vtkRenderer):
         corner_factor : float, optional
             If ``all_edges````, this is the factor along each axis to
             draw the default box. Default is 0.5 to show the full box.
+
+        fmt : str, optional
+            A format string defining how tick labels are generated from
+            tick positions. A default is looked up on the active theme.
+
+        minor_ticks : bool, optional
+            If ``True``, also plot minor ticks on all axes.
 
         padding : float, optional
             An optional percent padding along each axial direction to
@@ -675,7 +685,6 @@ class Renderer(_vtk.vtkRenderer):
         Examples
         --------
         >>> import pyvista
-        >>> from pyvista import examples
         >>> mesh = pyvista.Sphere()
         >>> plotter = pyvista.Plotter()
         >>> actor = plotter.add_mesh(mesh)
@@ -781,38 +790,34 @@ class Renderer(_vtk.vtkRenderer):
         cube_axes_actor.GetYAxesLinesProperty().SetColor(color)
         cube_axes_actor.GetZAxesLinesProperty().SetColor(color)
 
-        # empty arr
-        empty_str = _vtk.vtkStringArray()
-        empty_str.InsertNextValue('')
+        # empty string used for clearing axis labels
+        self._empty_str = _vtk.vtkStringArray()
+        self._empty_str.InsertNextValue('')
 
         # show lines
         if show_xaxis:
             cube_axes_actor.SetXTitle(xlabel)
+            if not show_xlabels:
+                cube_axes_actor.SetAxisLabels(0, self._empty_str)
         else:
             cube_axes_actor.SetXTitle('')
-            cube_axes_actor.SetAxisLabels(0, empty_str)
+            cube_axes_actor.SetAxisLabels(0, self._empty_str)
 
         if show_yaxis:
             cube_axes_actor.SetYTitle(ylabel)
+            if not show_ylabels:
+                cube_axes_actor.SetAxisLabels(1, self._empty_str)
         else:
             cube_axes_actor.SetYTitle('')
-            cube_axes_actor.SetAxisLabels(1, empty_str)
+            cube_axes_actor.SetAxisLabels(1, self._empty_str)
 
         if show_zaxis:
             cube_axes_actor.SetZTitle(zlabel)
+            if not show_zlabels:
+                cube_axes_actor.SetAxisLabels(2, self._empty_str)
         else:
             cube_axes_actor.SetZTitle('')
-            cube_axes_actor.SetAxisLabels(2, empty_str)
-
-        # show labels
-        if not show_xlabels:
-            cube_axes_actor.SetAxisLabels(0, empty_str)
-
-        if not show_ylabels:
-            cube_axes_actor.SetAxisLabels(1, empty_str)
-
-        if not show_zlabels:
-            cube_axes_actor.SetAxisLabels(2, empty_str)
+            cube_axes_actor.SetAxisLabels(2, self._empty_str)
 
         # set font
         font_family = parse_font_family(font_family)
@@ -1211,12 +1216,12 @@ class Renderer(_vtk.vtkRenderer):
     @property
     def parallel_projection(self):
         """Return parallel projection state of active render window."""
-        return self.camera.is_parallel_projection
+        return self.camera.parallel_projection
 
     @parallel_projection.setter
     def parallel_projection(self, state):
         """Set parallel projection state of all active render windows."""
-        self.camera.enable_parallel_projection(state)
+        self.camera.parallel_projection = state
         self.Modified()
 
     @property
@@ -1594,6 +1599,10 @@ class Renderer(_vtk.vtkRenderer):
             self.axes_actor = None
             del self.axes_widget
 
+        if self._empty_str is not None:
+            self._empty_str.SetReferenceCount(0)
+            self._empty_str = None
+
     def deep_clean(self, render=False):
         """Clean the renderer of the memory."""
         if hasattr(self, 'cube_axes_actor'):
@@ -1611,7 +1620,6 @@ class Renderer(_vtk.vtkRenderer):
         self._camera = None
         # remove reference to parent last
         self.parent = None
-        return
 
     def __del__(self):
         """Delete the renderer."""
